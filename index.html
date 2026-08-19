@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Busca de Fotos & Vídeos</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f0f2f5; color: #1a1a1a; }
+
+  header {
+    background: linear-gradient(135deg, #1c1c3a 0%, #2d2d6b 100%);
+    color: white; padding: 20px 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { font-size: 1.4rem; font-weight: 600; }
+  header .subtitle { font-size: 0.85rem; opacity: 0.7; margin-top: 2px; }
+
+  .stats-bar {
+    background: white; border-bottom: 1px solid #e0e0e0;
+    padding: 10px 24px;
+    display: flex; gap: 24px; font-size: 0.82rem; color: #555;
+  }
+  .stats-bar span { display: flex; align-items: center; gap: 5px; }
+  .stats-bar b { color: #2d2d6b; }
+
+  .search-area {
+    background: white; padding: 16px 24px;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  }
+  .search-area input[type=text] {
+    flex: 1; min-width: 200px; padding: 10px 14px;
+    border: 1.5px solid #ddd; border-radius: 8px;
+    font-size: 0.95rem; outline: none; transition: border 0.2s;
+  }
+  .search-area input[type=text]:focus { border-color: #2d2d6b; }
+  .search-area select {
+    padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 8px;
+    font-size: 0.9rem; background: white; cursor: pointer; outline: none;
+  }
+  .search-area select:focus { border-color: #2d2d6b; }
+  .btn {
+    padding: 10px 20px; border-radius: 8px; border: none;
+    font-size: 0.9rem; cursor: pointer; font-weight: 600;
+    transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-primary { background: #2d2d6b; color: white; }
+  .btn-secondary { background: #e8e8f5; color: #2d2d6b; }
+  .btn-ai { background: #7c3aed; color: white; font-size: 0.82rem; padding: 8px 14px; }
+
+  .gps-toggle { display: flex; align-items: center; gap: 6px; font-size: 0.88rem; cursor: pointer; color: #444; }
+  .gps-toggle input { cursor: pointer; }
+
+  .results-info {
+    padding: 12px 24px; font-size: 0.85rem; color: #666;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px; padding: 0 24px 24px;
+  }
+
+  .card {
+    background: white; border-radius: 10px; overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08); cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.13); }
+
+  .card-thumb {
+    width: 100%; aspect-ratio: 1/1;
+    background: #f0f0f0; position: relative; overflow: hidden;
+  }
+  .card-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .card-thumb .no-thumb { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #f4f4f4; font-size: 2rem; color: #bbb; }
+  .card-thumb .badge {
+    position: absolute; top: 6px; right: 6px;
+    background: rgba(0,0,0,0.6); color: white;
+    font-size: 0.7rem; padding: 2px 6px; border-radius: 4px;
+  }
+  .card-thumb .badge.video { background: #c00; }
+  .card-thumb .badge.gps { background: #0a8; left: 6px; right: auto; font-size: 0.65rem; }
+  .card-thumb .badge.ia  { background: #7c3aed; bottom: 6px; top: auto; right: 6px; font-size: 0.65rem; }
+  .card-del {
+    position: absolute; bottom: 6px; left: 6px;
+    background: rgba(160,0,0,0.82); color: white;
+    border: none; border-radius: 4px; padding: 2px 7px;
+    font-size: 0.72rem; cursor: pointer; opacity: 0;
+    transition: opacity 0.15s; z-index: 5;
+  }
+  .card-thumb:hover .card-del { opacity: 1; }
+  .card-del:hover { background: rgba(160,0,0,1) !important; }
+  .nav-btn.del { background: #fee2e2; color: #b91c1c; }
+  .nav-btn.del:hover { background: #fca5a5; }
+  .vbtn-del { background: rgba(160,0,0,0.75) !important; }
+
+  .card-info { padding: 8px 10px; }
+  .card-info .date { font-size: 0.8rem; color: #555; margin-bottom: 2px; }
+  .card-info .name { font-size: 0.78rem; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-info .desc { font-size: 0.78rem; color: #333; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    z-index: 1000; align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: white; border-radius: 14px; max-width: 700px; width: 90%;
+    max-height: 90vh; overflow-y: auto;
+  }
+  .img-wrap { position: relative; background: #000; border-radius: 14px 14px 0 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  .modal-img { width: 100%; max-height: 400px; object-fit: contain; display: block; }
+
+  /* Barra de nav modal (abaixo da imagem, fora do img-wrap) */
+  .img-nav-modal {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; gap: 8px; border-bottom: 1px solid #eee;
+  }
+  .img-nav-modal .nav-btn {
+    background: #e8e8f5; color: #2d2d6b; border: none;
+    padding: 8px 18px; border-radius: 8px; font-size: 1rem;
+    cursor: pointer; font-weight: 600; transition: background 0.15s;
+  }
+  .img-nav-modal .nav-btn:hover { background: #d0d0ea; }
+  .img-nav-modal .nav-btn:disabled { opacity: 0.3; cursor: default; }
+  .img-nav-modal .nav-btn.fs { background: #2d2d6b; color: white; }
+  .img-nav-modal .nav-btn.fs:hover { background: #1c1c5a; }
+
+  /* Barra de nav fullscreen (dentro do img-wrap, rodapé) */
+  .img-fs-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    display: none; align-items: center; justify-content: space-between;
+    padding: 16px 24px;
+    background: linear-gradient(to top, rgba(0,0,0,0.6), transparent);
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .img-wrap:fullscreen .img-fs-bar,
+  .img-wrap:-webkit-full-screen .img-fs-bar { display: flex; }
+  .img-wrap:fullscreen.ctrl-on .img-fs-bar,
+  .img-wrap:-webkit-full-screen.ctrl-on .img-fs-bar { opacity: 1; }
+
+  /* Fullscreen */
+  .img-wrap:fullscreen,
+  .img-wrap:-webkit-full-screen { width: 100vw; height: 100dvh; border-radius: 0; }
+  .img-wrap:fullscreen .modal-img,
+  .img-wrap:-webkit-full-screen .modal-img { max-height: 100dvh; width: 100%; height: 100%; object-fit: contain; border-radius: 0; }
+  .img-wrap:fullscreen:not(.ctrl-on),
+  .img-wrap:-webkit-full-screen:not(.ctrl-on) { cursor: none; }
+
+  /* Container do vídeo com overlay de navegação */
+  .video-wrap { position: relative; background: #000; border-radius: 14px 14px 0 0; overflow: hidden; }
+  .video-wrap video { display: block; width: 100%; max-height: 400px; object-fit: contain; }
+  .voverlay {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: space-between; padding: 12px;
+    opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    background: linear-gradient(to right, rgba(0,0,0,0.35) 0%, transparent 30%, transparent 70%, rgba(0,0,0,0.35) 100%);
+  }
+  /* Overlay: só visual, nunca captura eventos */
+  .video-wrap.ctrl-on .voverlay { opacity: 1; }
+  .vbtn {
+    background: rgba(0,0,0,0.65); color: white; border: none;
+    border-radius: 50%; width: 48px; height: 48px; font-size: 1.6rem;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, box-shadow 0.15s; flex-shrink: 0; line-height: 1;
+    pointer-events: all; /* sempre clicável, mesmo quando overlay está oculto */
+  }
+  .vbtn:hover { background: rgba(0,0,0,0.9); }
+  .vbtn:disabled { opacity: 0.2; cursor: default; }
+  .vcenter { display: flex; gap: 10px; align-items: center; }
+  .vbtn-fs   { font-size: 1rem; width: 38px; height: 38px; }
+  .vbtn-auto { font-size: 1.1rem; width: 38px; height: 38px; }
+  .vbtn-auto.on { background: rgba(251,146,60,0.85); box-shadow: 0 0 0 2px rgba(251,146,60,0.5); }
+
+  /* Fullscreen via wrapper — vídeo + botões ocupam a tela toda */
+  .video-wrap:fullscreen,
+  .video-wrap:-webkit-full-screen {
+    width: 100vw; height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 0;
+  }
+  .video-wrap:fullscreen video,
+  .video-wrap:-webkit-full-screen video {
+    width: 100%; height: 100%; max-height: 100dvh; object-fit: contain; border-radius: 0;
+  }
+  /* Cursor some em fullscreen quando controles estão ocultos */
+  .video-wrap:fullscreen:not(.ctrl-on),
+  .video-wrap:-webkit-full-screen:not(.ctrl-on) { cursor: none; }
+  .modal-body { padding: 20px; }
+  .modal-body h2 { font-size: 1rem; color: #1a1a1a; word-break: break-all; margin-bottom: 12px; }
+  .modal-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .meta-item { background: #f5f5f5; padding: 8px 10px; border-radius: 8px; }
+  .meta-item .label { font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+  .meta-item .value { font-size: 0.88rem; color: #222; margin-top: 2px; font-weight: 500; }
+  .modal-desc { background: #eef0ff; border-radius: 8px; padding: 12px; font-size: 0.88rem; color: #333; margin-bottom: 12px; line-height: 1.5; }
+  .modal-close { position: absolute; top: 12px; right: 16px; background: rgba(0,0,0,0.5); color: white; border: none; border-radius: 50%; width: 32px; height: 32px; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .modal-overlay { position: fixed; }
+  .modal-wrap { position: relative; }
+  .modal-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(0,0,0,0.55); color: white; border: none;
+    border-radius: 50%; width: 46px; height: 46px; font-size: 1.6rem;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s; z-index: 10; line-height: 1;
+  }
+  .modal-nav:hover { background: rgba(0,0,0,0.85); }
+  .modal-nav.prev { left: -60px; }
+  .modal-nav.next { right: -60px; }
+  .modal-nav:disabled { opacity: 0.2; cursor: default; }
+  .modal-counter { position: absolute; bottom: -28px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.75); font-size: 0.8rem; white-space: nowrap; }
+
+  .pagination { padding: 16px 24px; display: flex; gap: 8px; justify-content: center; }
+  .pagination button { padding: 7px 14px; border: 1.5px solid #ddd; border-radius: 6px; background: white; cursor: pointer; font-size: 0.85rem; }
+  .pagination button.active { background: #2d2d6b; color: white; border-color: #2d2d6b; }
+  .pagination button:hover:not(.active) { background: #f0f0f0; }
+
+  .empty { text-align: center; padding: 60px 24px; color: #888; }
+  .empty .icon { font-size: 3rem; margin-bottom: 12px; }
+
+  .loading { text-align: center; padding: 40px; color: #888; }
+
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); padding: 0 12px 16px; }
+    .search-area { padding: 12px; }
+    header { padding: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>📷 Busca de Fotos & Vídeos</h1>
+    <div class="subtitle">Fotos-Organizadas — Marcelo</div>
+  </div>
+</header>
+
+<div class="stats-bar" id="statsBar">
+  <span>Carregando...</span>
+</div>
+
+<div class="search-area">
+  <input type="text" id="searchInput" placeholder="Buscar por câmera, cidade, descrição…" autocomplete="off">
+  <select id="anoSelect" onchange="doSearch()">
+    <option value="">Todos os anos</option>
+  </select>
+  <select id="tipoSelect" onchange="doSearch()">
+    <option value="todos">Fotos + Vídeos</option>
+    <option value="foto" selected>Só Fotos</option>
+    <option value="video">Só Vídeos</option>
+  </select>
+  <label class="gps-toggle">
+    <input type="checkbox" id="gpsCheck" onchange="doSearch()"> 📍 Com GPS
+  </label>
+  <label class="gps-toggle">
+    <input type="checkbox" id="iaCheck" onchange="doSearch()"> 🟣 Com IA
+  </label>
+  <button class="btn btn-primary" onclick="doSearch()">Buscar</button>
+  <button class="btn btn-secondary" onclick="resetSearch()">Limpar</button>
+</div>
+
+<div class="results-info" id="resultsInfo"></div>
+<div class="grid" id="grid"></div>
+<div class="pagination" id="pagination"></div>
+
+<!-- Modal de detalhe -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal-wrap">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <button class="modal-nav prev" id="navPrev" onclick="navigateModal(-1)" title="Anterior (←)">‹</button>
+    <button class="modal-nav next" id="navNext" onclick="navigateModal(1)" title="Próximo (→)">›</button>
+    <div class="modal-counter" id="modalCounter"></div>
+    <div class="modal" id="modal">
+      <div id="modalMedia"></div>
+      <div id="modalMeta"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentOffset = 0;
+const LIMIT = 60;
+let currentTotal = 0;
+let currentItem = null;
+let currentIdx = -1;
+let itemsCache = [];
+
+function imgError(el) {
+  el.parentNode.innerHTML = '<div class="no-thumb">📷</div>';
+}
+
+async function api(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+
+async function loadStats() {
+  const s = await api("/api/stats");
+  document.getElementById("statsBar").innerHTML = `
+    <span>🖼️ <b>${s.fotos.toLocaleString()}</b> fotos</span>
+    <span>🎬 <b>${s.videos.toLocaleString()}</b> vídeos</span>
+    <span>📍 <b>${s.com_gps.toLocaleString()}</b> com GPS</span>
+    <span>🤖 <b>${s.com_descricao.toLocaleString()}</b> de <b>${s.total.toLocaleString()}</b> catalogados (${Math.round(s.com_descricao / s.total * 100)}%)</span>
+  `;
+}
+
+async function loadAnos() {
+  const anos = await api("/api/anos");
+  const sel = document.getElementById("anoSelect");
+  anos.forEach(({ano, total}) => {
+    const opt = document.createElement("option");
+    opt.value = ano;
+    opt.textContent = `${ano} (${total})`;
+    sel.appendChild(opt);
+  });
+}
+
+function getFilters() {
+  return {
+    q: document.getElementById("searchInput").value.trim(),
+    ano: document.getElementById("anoSelect").value,
+    tipo: document.getElementById("tipoSelect").value,
+    gps: document.getElementById("gpsCheck").checked ? "1" : "0",
+    ia: document.getElementById("iaCheck").checked ? "1" : "0",
+  };
+}
+
+async function doSearch(offset = 0) {
+  currentOffset = offset;
+  const f = getFilters();
+  const qs = new URLSearchParams({...f, limit: LIMIT, offset});
+  document.getElementById("resultsInfo").textContent = "Buscando…";
+  document.getElementById("grid").innerHTML = '<div class="loading">⏳ Carregando…</div>';
+
+  const data = await api(`/api/search?${qs}`);
+  currentTotal = data.total;
+  itemsCache = data.results;
+  renderGrid(data.results);
+  renderInfo(data);
+  renderPagination(data.total, offset);
+}
+
+function renderGrid(items) {
+  const grid = document.getElementById("grid");
+  if (!items.length) {
+    grid.innerHTML = '<div class="empty" style="grid-column:1/-1"><div class="icon">🔍</div>Nenhum resultado encontrado.</div>';
+    return;
+  }
+  grid.innerHTML = items.map((item, idx) => {
+    const isVideo = item.tipo === "video";
+    const hasGps = item.latitude != null;
+    const date = item.data_exif_fmt || item.data_arquivo_fmt || "";
+    const year = item.ano || "";
+    const nomeSafe = item.nome.replace(/"/g, "&quot;");
+
+    let thumb = "";
+    if (!isVideo) {
+      const cacheBust = item.extensao === ".heic" ? "&v=2" : "";
+      thumb = `<img src="/api/thumb?path=${encodeURIComponent(item.caminho)}${cacheBust}" loading="lazy" alt="${nomeSafe}" onerror="imgError(this)">`;
+    }
+
+    return `<div class="card" data-idx="${idx}" onclick="showModal(${idx})">
+      <div class="card-thumb">
+        ${thumb || `<div class="no-thumb">${isVideo ? "🎬" : "📷"}</div>`}
+        <span class="badge ${isVideo ? "video" : ""}">${isVideo ? "VÍD" : "FOTO"}</span>
+        ${hasGps ? '<span class="badge gps">📍</span>' : ""}
+        ${item.descricao ? '<span class="badge ia">IA</span>' : ""}
+        <button class="card-del" onclick="event.stopPropagation();confirmDelete(${idx})" title="Excluir">🗑</button>
+      </div>
+      <div class="card-info">
+        <div class="date">${date || year}</div>
+        <div class="name" title="${nomeSafe}">${item.nome}</div>
+        ${item.descricao ? `<div class="desc">${item.descricao}</div>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function renderInfo(data) {
+  const f = getFilters();
+  const hasFilter = f.q || f.ano || f.tipo !== "todos" || f.gps === "1" || f.ia === "1";
+  const from = data.offset + 1;
+  const to = Math.min(data.offset + data.results.length, data.total);
+  document.getElementById("resultsInfo").textContent =
+    data.total === 0 ? "Nenhum resultado."
+    : `Mostrando ${from}–${to} de ${data.total.toLocaleString()} resultado${data.total !== 1 ? "s" : ""}`;
+}
+
+function renderPagination(total, offset) {
+  const pages = Math.ceil(total / LIMIT);
+  const current = Math.floor(offset / LIMIT);
+  const pg = document.getElementById("pagination");
+  if (pages <= 1) { pg.innerHTML = ""; return; }
+
+  let html = "";
+  if (current > 0) html += `<button onclick="doSearch(${(current-1)*LIMIT})">← Anterior</button>`;
+
+  const start = Math.max(0, current - 2);
+  const end = Math.min(pages - 1, current + 2);
+  for (let i = start; i <= end; i++) {
+    html += `<button class="${i === current ? "active" : ""}" onclick="doSearch(${i*LIMIT})">${i+1}</button>`;
+  }
+  if (current < pages - 1) html += `<button onclick="doSearch(${(current+1)*LIMIT})">Próxima →</button>`;
+  pg.innerHTML = html;
+}
+
+function stopCurrentVideo() {
+  const v = document.getElementById('modalVideo');
+  if (v) {
+    v.pause();
+    v.removeAttribute('src');
+    v.load();
+  }
+}
+
+let _ctrlTimer = null;
+let autoplayEnabled = false;
+
+function showVideoControls() {
+  const w = document.getElementById('videoWrapper');
+  if (!w) return;
+  w.classList.add('ctrl-on');
+  clearTimeout(_ctrlTimer);
+  // Auto-oculta só em fullscreen; fora do fullscreen fica visível enquanto o mouse estiver sobre o vídeo
+  if (document.fullscreenElement) {
+    _ctrlTimer = setTimeout(() => w.classList.remove('ctrl-on'), 3000);
+  }
+}
+
+function hideVideoControls() {
+  clearTimeout(_ctrlTimer);
+  const w = document.getElementById('videoWrapper');
+  if (w) w.classList.remove('ctrl-on');
+}
+
+function attachVideoControls(suppressControls = false) {
+  const w = document.getElementById('videoWrapper');
+  if (!w) return;
+  w.addEventListener('mousemove',  showVideoControls);
+  w.addEventListener('mouseenter', showVideoControls);
+  w.addEventListener('mouseleave', () => { if (!document.fullscreenElement) hideVideoControls(); });
+  w.addEventListener('touchstart', showVideoControls, { passive: true });
+
+  const v = document.getElementById('modalVideo');
+  if (v) {
+    v.addEventListener('ended', () => {
+      if (autoplayEnabled && currentIdx < itemsCache.length - 1) navigateModal(1, true);
+    });
+    // Se o vídeo entrar em fullscreen nativo (ex: double-click), redireciona para o wrapper
+    v.addEventListener('fullscreenchange', () => {
+      if (document.fullscreenElement === v) {
+        document.exitFullscreen().then(() => {
+          const wrapper = document.getElementById("videoWrapper");
+          if (wrapper) wrapper.requestFullscreen().catch(() => {});
+        }).catch(() => {});
+      }
+    });
+  }
+
+  // Pausa o auto-hide enquanto o cursor estiver sobre qualquer botão do overlay
+  document.querySelectorAll('#videoWrapper .vbtn').forEach(btn => {
+    btn.addEventListener('mouseenter', () => clearTimeout(_ctrlTimer));
+    btn.addEventListener('mouseleave', () => {
+      if (document.fullscreenElement) {
+        clearTimeout(_ctrlTimer);
+        _ctrlTimer = setTimeout(() => {
+          const w = document.getElementById('videoWrapper');
+          if (w) w.classList.remove('ctrl-on');
+        }, 3000);
+      }
+    });
+  });
+
+  updateAutoplayBtn();
+  if (!suppressControls) showVideoControls();
+}
+
+function toggleAutoplay() {
+  autoplayEnabled = !autoplayEnabled;
+  updateAutoplayBtn();
+}
+
+function updateAutoplayBtn() {
+  const btn = document.getElementById('autoplayBtn');
+  if (!btn) return;
+  btn.classList.toggle('on', autoplayEnabled);
+  btn.title = autoplayEnabled ? 'Autoplay: ativo (clique para desativar)' : 'Autoplay: inativo (clique para ativar)';
+}
+
+const VIDEO_EXTS = new Set([".mp4",".mov",".mpg",".3gp"]);
+
+function buildMetaHtml(item) {
+  const hasGps = item.latitude != null;
+  const date = item.data_exif_fmt || item.data_arquivo_fmt || "—";
+  const metas = [
+    { label: "Data",     value: date },
+    { label: "Tamanho",  value: item.tamanho_fmt || "—" },
+    { label: "Câmera",   value: item.camera || "—" },
+    { label: "Tipo",     value: item.extensao?.toUpperCase() || "—" },
+    hasGps ? { label: "Latitude",  value: item.latitude?.toFixed(5)  } : null,
+    hasGps ? { label: "Longitude", value: item.longitude?.toFixed(5) } : null,
+    item.cidade ? { label: "Cidade", value: item.cidade } : null,
+    item.pais   ? { label: "País",   value: item.pais   } : null,
+  ].filter(Boolean);
+  return `
+    <div class="modal-body">
+      <h2>${item.nome}</h2>
+      ${item.descricao ? `<div class="modal-desc">🤖 ${item.descricao}</div>` : ""}
+      <div class="modal-meta">
+        ${metas.map(m => `<div class="meta-item"><div class="label">${m.label}</div><div class="value">${m.value}</div></div>`).join("")}
+      </div>
+      <div style="font-size:0.75rem;color:#aaa;word-break:break-all;">${item.caminho}</div>
+      ${hasGps ? `<div style="margin-top:10px"><a href="https://maps.google.com/?q=${item.latitude},${item.longitude}" target="_blank" style="font-size:0.85rem;color:#2d2d6b;">📍 Ver no Maps</a></div>` : ""}
+    </div>`;
+}
+
+function updateNavState(idx) {
+  document.getElementById("navPrev").disabled = idx === 0;
+  document.getElementById("navNext").disabled = idx === itemsCache.length - 1;
+  document.getElementById("modalCounter").textContent = `${idx + 1} / ${itemsCache.length}`;
+}
+
+function showModal(idx, suppressControls = false) {
+  const item = itemsCache[idx];
+  if (!item) return;
+
+  const isVideo = item.tipo === "video" && VIDEO_EXTS.has(item.extensao);
+  const inFullscreen = !!document.fullscreenElement;
+
+  // Caminho rápido: em fullscreen navegando entre fotos — troca só o src sem destruir o DOM
+  if (inFullscreen && !isVideo && document.getElementById("imgWrapper")) {
+    currentItem = item;
+    currentIdx = idx;
+    const cacheBust = item.extensao === ".heic" ? "&v=2" : "";
+    document.querySelector("#imgWrapper img").src =
+      `/api/thumb?path=${encodeURIComponent(item.caminho)}${cacheBust}`;
+    const prev = document.getElementById('imgFsPrev');
+    const next = document.getElementById('imgFsNext');
+    if (prev) prev.disabled = idx === 0;
+    if (next) next.disabled = idx === itemsCache.length - 1;
+    document.getElementById("modalMeta").innerHTML = buildMetaHtml(item);
+    updateNavState(idx);
+    if (!suppressControls) showImgControls();
+    return;
+  }
+
+  // Caminho rápido: em fullscreen navegando entre vídeos — reutiliza o elemento
+  // sem destruir o DOM (o que causaria saída automática do fullscreen)
+  if (inFullscreen && isVideo && document.getElementById("videoWrapper")) {
+    stopCurrentVideo();
+    currentItem = item;
+    currentIdx = idx;
+
+    const v = document.getElementById("modalVideo");
+    v.src = `/api/thumb?path=${encodeURIComponent(item.caminho)}`;
+    v.load();
+    v.play().catch(() => {});
+
+    // Atualiza estado dos botões de overlay dentro do vídeo
+    const btns = document.querySelectorAll("#videoWrapper .vbtn");
+    if (btns[0]) btns[0].disabled = idx === 0;
+    if (btns[2]) btns[2].disabled = idx === itemsCache.length - 1;
+
+    document.getElementById("modalMeta").innerHTML = buildMetaHtml(item);
+    updateNavState(idx);
+    updateAutoplayBtn();
+    if (!suppressControls) showVideoControls();
+    return;
+  }
+
+  // Caminho normal — reconstrói tudo
+  stopCurrentVideo();
+  currentItem = item;
+  currentIdx = idx;
+
+  let mediaHtml = "";
+  if (!isVideo) {
+    const cacheBust = item.extensao === ".heic" ? "&v=2" : "";
+    const src = `/api/thumb?path=${encodeURIComponent(item.caminho)}${cacheBust}`;
+    const altSafe = item.nome.replace(/"/g,'&quot;');
+    mediaHtml = `
+      <div class="img-wrap" id="imgWrapper">
+        <img class="modal-img" src="${src}" alt="${altSafe}">
+        <div class="img-fs-bar">
+          <button class="vbtn" id="imgFsPrev" ${idx===0?"disabled":""} onclick="navigateModal(-1)" title="Anterior">‹</button>
+          <button class="vbtn vbtn-fs vbtn-del" onclick="deleteFromModal()" title="Excluir">🗑</button>
+          <button class="vbtn vbtn-fs" onclick="toggleImgFullscreen()" title="Sair da tela cheia">✕</button>
+          <button class="vbtn" id="imgFsNext" ${idx===itemsCache.length-1?"disabled":""} onclick="navigateModal(1)" title="Próxima">›</button>
+        </div>
+      </div>
+      <div class="img-nav-modal" id="imgNavModal">
+        <button class="nav-btn" id="imgNavPrev" ${idx===0?"disabled":""} onclick="navigateModal(-1)">‹ Anterior</button>
+        <button class="nav-btn fs" onclick="toggleImgFullscreen()">⛶ Tela cheia</button>
+        <button class="nav-btn del" onclick="deleteFromModal()">🗑 Excluir</button>
+        <button class="nav-btn" id="imgNavNext" ${idx===itemsCache.length-1?"disabled":""} onclick="navigateModal(1)">Próxima ›</button>
+      </div>`;
+  } else if (isVideo) {
+    mediaHtml = `
+      <div class="video-wrap" id="videoWrapper">
+        <video id="modalVideo" controls controlsList="nofullscreen" preload="metadata"
+          src="/api/thumb?path=${encodeURIComponent(item.caminho)}"></video>
+        <div class="voverlay">
+          <button class="vbtn" ${idx === 0 ? "disabled" : ""} onclick="navigateModal(-1)" title="Anterior (←)">‹</button>
+          <div class="vcenter">
+            <button class="vbtn vbtn-fs" onclick="toggleVideoFullscreen()" title="Tela cheia">⛶</button>
+            <button class="vbtn vbtn-auto" id="autoplayBtn" onclick="toggleAutoplay()" title="Autoplay: inativo">⏭</button>
+            <button class="vbtn vbtn-auto vbtn-del" onclick="deleteFromModal()" title="Excluir">🗑</button>
+          </div>
+          <button class="vbtn" ${idx === itemsCache.length - 1 ? "disabled" : ""} onclick="navigateModal(1)" title="Próximo (→)">›</button>
+        </div>
+      </div>`;
+  } else {
+    mediaHtml = `<div class="modal-img" style="height:120px;display:flex;align-items:center;justify-content:center;font-size:3rem;">🎬</div>`;
+  }
+
+  document.getElementById("modalMedia").innerHTML = mediaHtml;
+  document.getElementById("modalMeta").innerHTML = buildMetaHtml(item);
+  updateNavState(idx);
+  document.getElementById("modalOverlay").classList.add("open");
+  document.getElementById("modal").scrollTop = 0;
+
+  if (isVideo) {
+    const v = document.getElementById("modalVideo");
+    if (v) v.play().catch(() => {});
+    attachVideoControls(suppressControls);
+  } else {
+    attachImgControls();
+  }
+}
+
+function navigateModal(dir, suppressControls = false) {
+  const next = currentIdx + dir;
+  if (next >= 0 && next < itemsCache.length) showModal(next, suppressControls);
+}
+
+let _imgCtrlTimer = null;
+
+function showImgControls() {
+  const w = document.getElementById('imgWrapper');
+  if (!w) return;
+  w.classList.add('ctrl-on');
+  clearTimeout(_imgCtrlTimer);
+  if (document.fullscreenElement) {
+    _imgCtrlTimer = setTimeout(() => w && w.classList.remove('ctrl-on'), 3000);
+  }
+}
+
+function attachImgControls() {
+  const w = document.getElementById('imgWrapper');
+  if (!w) return;
+  w.addEventListener('mousemove',  showImgControls);
+  w.addEventListener('mouseenter', showImgControls);
+  w.addEventListener('mouseleave', () => { if (!document.fullscreenElement) w.classList.remove('ctrl-on'); });
+  w.addEventListener('touchstart', showImgControls, { passive: true });
+  showImgControls();
+}
+
+function toggleImgFullscreen() {
+  const w = document.getElementById('imgWrapper');
+  if (!w) return;
+  if (!document.fullscreenElement) {
+    w.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
+
+function toggleVideoFullscreen() {
+  const wrapper = document.getElementById("videoWrapper");
+  if (!wrapper) return;
+  if (!document.fullscreenElement) {
+    wrapper.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
+function closeModal(event) {
+  if (!event || event.target === document.getElementById("modalOverlay") || event.currentTarget.tagName === "BUTTON") {
+    stopCurrentVideo();
+    if (document.fullscreenElement) document.exitFullscreen();
+    document.getElementById("modalOverlay").classList.remove("open");
+  }
+}
+
+function deleteFromModal() {
+  confirmDelete(currentIdx);
+}
+
+async function confirmDelete(idx) {
+  const item = itemsCache[idx];
+  if (!item) return;
+  if (!confirm(`Excluir permanentemente?\n\n${item.nome}\n\nEsta ação não pode ser desfeita.`)) return;
+
+  try {
+    const r = await fetch("/api/delete", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({path: item.caminho})
+    });
+    const result = await r.json();
+    if (!result.ok) { alert("Erro ao excluir: " + result.error); return; }
+
+    itemsCache.splice(idx, 1);
+    currentTotal--;
+    renderGrid(itemsCache);
+
+    const modalOpen = document.getElementById("modalOverlay").classList.contains("open");
+    if (modalOpen) {
+      if (itemsCache.length === 0) {
+        closeModal();
+      } else {
+        if (document.fullscreenElement) document.exitFullscreen();
+        showModal(Math.min(idx, itemsCache.length - 1));
+      }
+    }
+    loadStats();
+  } catch(e) {
+    alert("Erro: " + e.message);
+  }
+}
+
+function resetSearch() {
+  document.getElementById("searchInput").value = "";
+  document.getElementById("anoSelect").value = "";
+  document.getElementById("tipoSelect").value = "foto";
+  document.getElementById("gpsCheck").checked = false;
+  document.getElementById("iaCheck").checked = false;
+  doSearch();
+}
+
+document.getElementById("searchInput").addEventListener("keydown", e => {
+  if (e.key === "Enter") doSearch();
+});
+
+document.addEventListener("keydown", e => {
+  const isOpen = document.getElementById("modalOverlay").classList.contains("open");
+  if (e.key === "Escape" && !document.fullscreenElement) closeModal(e);
+  if (isOpen && e.key === "ArrowLeft") navigateModal(-1);
+  if (isOpen && e.key === "ArrowRight") navigateModal(1);
+});
+
+// Listener unificado de fullscreen — dispara controles de vídeo OU imagem
+function _onFsActivity() {
+  if (document.getElementById('videoWrapper')) showVideoControls();
+  if (document.getElementById('imgWrapper'))   showImgControls();
+}
+document.addEventListener('fullscreenchange', () => {
+  if (document.fullscreenElement) {
+    document.addEventListener('mousemove', _onFsActivity);
+    document.addEventListener('touchstart', _onFsActivity, { passive: true });
+  } else {
+    document.removeEventListener('mousemove', _onFsActivity);
+    document.removeEventListener('touchstart', _onFsActivity);
+  }
+});
+
+// Inicializa
+loadStats();
+setInterval(loadStats, 60000);
+loadAnos();
+doSearch();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# Dados pessoais e sensíveis
+.env
+fotos.db
+
+# Cache de thumbnails HEIC
+/tmp/fotosearch_thumbs/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+__pycache__/
+*.pyc
