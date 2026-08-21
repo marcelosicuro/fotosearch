@@ -18,6 +18,56 @@ import mimetypes
 HEIC_CACHE_DIR = Path("/tmp/fotosearch_thumbs")
 HEIC_CACHE_DIR.mkdir(exist_ok=True)
 
+VIDEO_THUMB_DIR = Path("/tmp/fotosearch_video_thumbs")
+VIDEO_THUMB_DIR.mkdir(exist_ok=True)
+
+
+def video_thumbnail(video_path):
+    key = hashlib.md5(str(video_path).encode()).hexdigest()
+    cache_path = VIDEO_THUMB_DIR / f"{key}.jpg"
+    if cache_path.exists() and cache_path.stat().st_size > 0:
+        return cache_path
+
+    tmp_dir = VIDEO_THUMB_DIR / f"tmp_{key}"
+    try:
+        tmp_dir.mkdir(exist_ok=True)
+        subprocess.run(
+            ["qlmanage", "-t", "-s", "400", "-o", str(tmp_dir), str(video_path)],
+            capture_output=True, timeout=20
+        )
+        generated = list(tmp_dir.iterdir())
+        if generated:
+            subprocess.run(
+                ["sips", "-s", "format", "jpeg", str(generated[0]), "--out", str(cache_path)],
+                capture_output=True
+            )
+    except Exception:
+        pass
+    finally:
+        if tmp_dir.exists():
+            for f in tmp_dir.iterdir():
+                f.unlink()
+            try:
+                tmp_dir.rmdir()
+            except Exception:
+                pass
+
+    # Fallback: ffmpeg se disponível
+    if not (cache_path.exists() and cache_path.stat().st_size > 0):
+        for seek in ["3", "1", "0"]:
+            try:
+                subprocess.run(
+                    ["ffmpeg", "-ss", seek, "-i", str(video_path),
+                     "-vframes", "1", "-q:v", "3", "-vf", "scale=400:-1", "-y", str(cache_path)],
+                    capture_output=True, timeout=15
+                )
+                if cache_path.exists() and cache_path.stat().st_size > 0:
+                    break
+            except FileNotFoundError:
+                break
+
+    return cache_path if (cache_path.exists() and cache_path.stat().st_size > 0) else None
+
 
 def heic_to_jpeg(heic_path):
     """Converte HEIC para JPEG usando sips (macOS). Retorna caminho do JPEG em cache."""
@@ -258,6 +308,28 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(get_stats())
             return
 
+        if path == "/api/reveal":
+            caminho = qp("path")
+            if caminho and os.path.exists(caminho):
+                subprocess.run(["open", "-R", caminho], capture_output=True)
+                self.send_json({"ok": True})
+            else:
+                self.send_json({"ok": False}, 404)
+            return
+
+        if path == "/api/video_thumb":
+            caminho = qp("path")
+            if caminho and os.path.exists(caminho):
+                ext = Path(caminho).suffix.lower()
+                if ext in {".mp4", ".mov", ".mpg", ".3gp"}:
+                    thumb = video_thumbnail(caminho)
+                    if thumb:
+                        self.serve_media(str(thumb))
+                        return
+            self.send_response(404)
+            self.end_headers()
+            return
+
         if path == "/api/thumb":
             caminho = qp("path")
             if caminho and os.path.exists(caminho):
@@ -289,7 +361,7 @@ if __name__ == "__main__":
 
     print(f"\nServidor rodando em http://localhost:{PORT}")
     print("Pressione Ctrl+C para parar.\n")
-    server = ThreadingHTTPServer(("localhost", PORT), Handler)
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

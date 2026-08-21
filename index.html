@@ -85,15 +85,18 @@
   .card-thumb .badge.video { background: #c00; }
   .card-thumb .badge.gps { background: #0a8; left: 6px; right: auto; font-size: 0.65rem; }
   .card-thumb .badge.ia  { background: #7c3aed; bottom: 6px; top: auto; right: 6px; font-size: 0.65rem; }
-  .card-del {
-    position: absolute; bottom: 6px; left: 6px;
-    background: rgba(160,0,0,0.82); color: white;
-    border: none; border-radius: 4px; padding: 2px 7px;
+  .card-del, .card-share {
+    position: absolute; bottom: 6px;
+    color: white; border: none; border-radius: 4px; padding: 2px 7px;
     font-size: 0.72rem; cursor: pointer; opacity: 0;
     transition: opacity 0.15s; z-index: 5;
   }
-  .card-thumb:hover .card-del { opacity: 1; }
-  .card-del:hover { background: rgba(160,0,0,1) !important; }
+  .card-del  { left: 6px;  background: rgba(160,0,0,0.82); }
+  .card-share { left: 42px; background: rgba(37,180,90,0.85); }
+  .card-thumb:hover .card-del,
+  .card-thumb:hover .card-share { opacity: 1; }
+  .card-del:hover  { background: rgba(160,0,0,1) !important; }
+  .card-share:hover { background: rgba(37,180,90,1) !important; }
   .nav-btn.del { background: #fee2e2; color: #b91c1c; }
   .nav-btn.del:hover { background: #fca5a5; }
   .vbtn-del { background: rgba(160,0,0,0.75) !important; }
@@ -197,7 +200,13 @@
   .meta-item { background: #f5f5f5; padding: 8px 10px; border-radius: 8px; }
   .meta-item .label { font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
   .meta-item .value { font-size: 0.88rem; color: #222; margin-top: 2px; font-weight: 500; }
-  .modal-desc { background: #eef0ff; border-radius: 8px; padding: 12px; font-size: 0.88rem; color: #333; margin-bottom: 12px; line-height: 1.5; }
+  .modal-desc { background: #eef0ff; border-radius: 8px; padding: 12px; font-size: 0.88rem; color: #333; margin-bottom: 12px; line-height: 1.5; display: flex; gap: 10px; align-items: flex-start; }
+  .modal-desc .desc-text { flex: 1; }
+  .btn-speak { background: none; border: none; cursor: pointer; font-size: 1.2rem; padding: 0; line-height: 1; flex-shrink: 0; margin-top: 1px; opacity: 0.7; transition: opacity 0.15s; }
+  .btn-speak:hover { opacity: 1; }
+  .btn-speak.speaking { animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+  .voice-select { font-size: 0.72rem; border: 1px solid #c0c0e0; border-radius: 4px; padding: 2px 4px; background: white; color: #2d2d6b; cursor: pointer; flex-shrink: 0; max-width: 130px; }
   .modal-close { position: absolute; top: 12px; right: 16px; background: rgba(0,0,0,0.5); color: white; border: none; border-radius: 50%; width: 32px; height: 32px; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; }
   .modal-overlay { position: fixed; }
   .modal-wrap { position: relative; }
@@ -359,7 +368,9 @@ function renderGrid(items) {
     const nomeSafe = item.nome.replace(/"/g, "&quot;");
 
     let thumb = "";
-    if (!isVideo) {
+    if (isVideo) {
+      thumb = `<img src="/api/video_thumb?path=${encodeURIComponent(item.caminho)}" loading="lazy" alt="${nomeSafe}" onerror="imgError(this)">`;
+    } else {
       const cacheBust = item.extensao === ".heic" ? "&v=2" : "";
       thumb = `<img src="/api/thumb?path=${encodeURIComponent(item.caminho)}${cacheBust}" loading="lazy" alt="${nomeSafe}" onerror="imgError(this)">`;
     }
@@ -371,6 +382,7 @@ function renderGrid(items) {
         ${hasGps ? '<span class="badge gps">📍</span>' : ""}
         ${item.descricao ? '<span class="badge ia">IA</span>' : ""}
         <button class="card-del" onclick="event.stopPropagation();confirmDelete(${idx})" title="Excluir">🗑</button>
+        <button class="card-share" onclick="event.stopPropagation();shareItem(${idx})" title="Compartilhar">📤</button>
       </div>
       <div class="card-info">
         <div class="date">${date || year}</div>
@@ -510,7 +522,7 @@ function buildMetaHtml(item) {
   return `
     <div class="modal-body">
       <h2>${item.nome}</h2>
-      ${item.descricao ? `<div class="modal-desc">🤖 ${item.descricao}</div>` : ""}
+      ${item.descricao ? `<div class="modal-desc"><button class="btn-speak" onclick="toggleSpeak(this)" data-text="${item.descricao.replace(/"/g,'&quot;')}" title="Ouvir descrição">🔊</button><select class="voice-select" id="voiceSelect" onchange="localStorage.setItem('fsVoice',this.value)" title="Escolher voz"></select><span class="desc-text">🤖 ${item.descricao}</span></div>` : ""}
       <div class="modal-meta">
         ${metas.map(m => `<div class="meta-item"><div class="label">${m.label}</div><div class="value">${m.value}</div></div>`).join("")}
       </div>
@@ -545,6 +557,7 @@ function showModal(idx, suppressControls = false) {
     if (next) next.disabled = idx === itemsCache.length - 1;
     document.getElementById("modalMeta").innerHTML = buildMetaHtml(item);
     updateNavState(idx);
+    populateVoiceSelect();
     if (!suppressControls) showImgControls();
     return;
   }
@@ -569,6 +582,7 @@ function showModal(idx, suppressControls = false) {
     document.getElementById("modalMeta").innerHTML = buildMetaHtml(item);
     updateNavState(idx);
     updateAutoplayBtn();
+    populateVoiceSelect();
     if (!suppressControls) showVideoControls();
     return;
   }
@@ -621,6 +635,11 @@ function showModal(idx, suppressControls = false) {
   document.getElementById("modalMedia").innerHTML = mediaHtml;
   document.getElementById("modalMeta").innerHTML = buildMetaHtml(item);
   updateNavState(idx);
+  if (window.speechSynthesis.getVoices().length > 0) {
+    populateVoiceSelect();
+  } else {
+    window.speechSynthesis.addEventListener('voiceschanged', populateVoiceSelect, { once: true });
+  }
   document.getElementById("modalOverlay").classList.add("open");
   document.getElementById("modal").scrollTop = 0;
 
@@ -684,8 +703,100 @@ function toggleVideoFullscreen() {
 function closeModal(event) {
   if (!event || event.target === document.getElementById("modalOverlay") || event.currentTarget.tagName === "BUTTON") {
     stopCurrentVideo();
+    window.speechSynthesis.cancel();
     if (document.fullscreenElement) document.exitFullscreen();
     document.getElementById("modalOverlay").classList.remove("open");
+  }
+}
+
+function populateVoiceSelect() {
+  const sel = document.getElementById('voiceSelect');
+  if (!sel) return;
+  const all = window.speechSynthesis.getVoices();
+  const pt = all.filter(v => v.lang.startsWith('pt'));
+  if (pt.length === 0) { sel.style.display = 'none'; return; }
+  const saved = localStorage.getItem('fsVoice');
+  sel.innerHTML = pt.map(v =>
+    `<option value="${v.name}" ${v.name === saved ? 'selected' : ''}>${v.name.replace(' (Enhanced)','').replace(' (Premium)','')}</option>`
+  ).join('');
+}
+
+function toggleSpeak(btn) {
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+    btn.classList.remove('speaking');
+    return;
+  }
+  const utt = new SpeechSynthesisUtterance(btn.dataset.text);
+  utt.lang = 'pt-BR';
+  utt.rate = 0.95;
+  utt.onstart = () => btn.classList.add('speaking');
+  utt.onend = utt.onerror = () => btn.classList.remove('speaking');
+
+  function doSpeak() {
+    const all = window.speechSynthesis.getVoices();
+    const sel = document.getElementById('voiceSelect');
+    const saved = sel ? sel.value : localStorage.getItem('fsVoice');
+    const voice = all.find(v => v.name === saved)
+      || all.find(v => v.lang === 'pt-BR')
+      || all.find(v => v.lang.startsWith('pt'));
+    if (voice) utt.voice = voice;
+    window.speechSynthesis.speak(utt);
+  }
+
+  if (window.speechSynthesis.getVoices().length > 0) {
+    doSpeak();
+  } else {
+    window.speechSynthesis.addEventListener('voiceschanged', doSpeak, { once: true });
+  }
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 22px;border-radius:8px;z-index:9999;font-size:14px;pointer-events:none;';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+async function shareItem(idx) {
+  const item = itemsCache[idx];
+  if (!item) return;
+  try {
+    const cacheBust = item.extensao === '.heic' ? '&v=2' : '';
+    const resp = await fetch(`/api/thumb?path=${encodeURIComponent(item.caminho)}${cacheBust}`);
+    const blob = await resp.blob();
+
+    // Para fotos: copia direto para clipboard (sem share sheet → sem duplicação no WhatsApp)
+    if (item.tipo !== 'video' && navigator.clipboard && navigator.clipboard.write) {
+      try {
+        const imgBlob = blob.type.startsWith('image/') ? blob : new Blob([await blob.arrayBuffer()], { type: 'image/jpeg' });
+        await navigator.clipboard.write([new ClipboardItem({ [imgBlob.type]: imgBlob })]);
+        showToast('📋 Imagem copiada! Cole no WhatsApp.');
+        return;
+      } catch (e) { /* fallthrough para share sheet */ }
+    }
+
+    // Para vídeos: revelar no Finder (arrastar para o WhatsApp)
+    if (item.tipo === 'video') {
+      await fetch(`/api/reveal?path=${encodeURIComponent(item.caminho)}`);
+      showToast('📂 Vídeo revelado no Finder — arraste para o WhatsApp.');
+      return;
+    }
+
+    // Fallback para fotos quando Clipboard API não está disponível
+    if (navigator.share) {
+      const file = new File([blob], item.nome, { type: blob.type });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: item.nome });
+      } else {
+        await navigator.share({ title: item.nome, text: item.descricao || item.nome });
+      }
+    } else {
+      alert('Compartilhamento não suportado neste navegador.');
+    }
+  } catch(e) {
+    if (e.name !== 'AbortError') alert('Erro ao compartilhar: ' + e.message);
   }
 }
 

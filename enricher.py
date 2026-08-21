@@ -60,25 +60,46 @@ def encode_image(path):
 
 
 def extract_video_frame(path):
-    """Extrai o frame do meio do vídeo usando ffmpeg."""
+    """Extrai um frame do vídeo usando qlmanage (macOS) com fallback para ffmpeg."""
+    import hashlib
+    tmp_dir = Path(tempfile.mkdtemp(prefix="fotosearch_vframe_"))
     try:
-        # Descobre a duração
-        probe = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
-             "-show_format", str(path)],
-            capture_output=True, timeout=10
+        subprocess.run(
+            ["qlmanage", "-t", "-s", "400", "-o", str(tmp_dir), str(path)],
+            capture_output=True, timeout=20
         )
-        duration = 0
-        if probe.returncode == 0:
-            info = json.loads(probe.stdout)
-            duration = float(info.get("format", {}).get("duration", 0))
+        generated = list(tmp_dir.iterdir())
+        if generated:
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                jpg_path = tmp.name
+            subprocess.run(
+                ["sips", "-s", "format", "jpeg", str(generated[0]), "--out", jpg_path],
+                capture_output=True
+            )
+            if Path(jpg_path).exists() and Path(jpg_path).stat().st_size > 0:
+                with open(jpg_path, "rb") as f:
+                    data = base64.b64encode(f.read()).decode("utf-8")
+                os.unlink(jpg_path)
+                return "image/jpeg", data
+    except Exception:
+        pass
+    finally:
+        for f in tmp_dir.iterdir():
+            try:
+                f.unlink()
+            except Exception:
+                pass
+        try:
+            tmp_dir.rmdir()
+        except Exception:
+            pass
 
-        seek = max(0, duration / 2)
+    # Fallback: ffmpeg se disponível
+    try:
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
             tmp_path = tmp.name
-
         result = subprocess.run(
-            ["ffmpeg", "-ss", str(seek), "-i", str(path),
+            ["ffmpeg", "-ss", "3", "-i", str(path),
              "-vframes", "1", "-q:v", "3", "-y", tmp_path],
             capture_output=True, timeout=20
         )
@@ -89,6 +110,7 @@ def extract_video_frame(path):
             return "image/jpeg", data
     except Exception:
         pass
+
     return None, None
 
 
@@ -170,7 +192,7 @@ def main():
             if tipo == "video":
                 mime, data = extract_video_frame(caminho)
                 if not mime:
-                    print("ffmpeg indisponível, pulando.")
+                    print("frame não extraído, pulando.")
                     pulados += 1
                     continue
             elif ext in PHOTO_EXTS:
