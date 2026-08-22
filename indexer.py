@@ -11,7 +11,8 @@ import sqlite3
 import argparse
 import hashlib
 import re
-from datetime import datetime
+import struct
+from datetime import datetime, timedelta
 from pathlib import Path
 
 try:
@@ -134,6 +135,29 @@ def extract_exif_exifread(path):
     return info
 
 
+def extract_video_date(filepath):
+    """Lê a data real de gravação do container QuickTime/MP4 (atom mvhd)."""
+    QT_EPOCH = datetime(1904, 1, 1)
+    try:
+        with open(filepath, 'rb') as f:
+            data = f.read()
+        idx = data.find(b'mvhd')
+        if idx == -1:
+            return None
+        p = idx + 4
+        version = data[p]
+        ct = struct.unpack('>I', data[p+4:p+8])[0] if version == 0 else struct.unpack('>Q', data[p+4:p+12])[0]
+        if ct == 0:
+            return None
+        dt = QT_EPOCH + timedelta(seconds=ct)
+        now = datetime.now()
+        if datetime(2000, 1, 1) <= dt <= datetime(now.year + 1, 12, 31):
+            return dt
+    except Exception:
+        pass
+    return None
+
+
 def extract_metadata(filepath):
     """Extrai todos os metadados disponíveis de uma foto/vídeo."""
     stat = filepath.stat()
@@ -157,6 +181,14 @@ def extract_metadata(filepath):
     if ext in PHOTO_EXTS and exifread:
         exif_info = extract_exif_exifread(filepath)
         info.update(exif_info)
+
+    # Para vídeos: lê data real do container QuickTime/MP4
+    if tipo == "video" and not info.get("data_exif"):
+        dt = extract_video_date(filepath)
+        if dt:
+            info["data_exif"] = dt.isoformat()
+            info["ano"] = dt.year
+            info["mes"] = dt.month
 
     # Extrai data de nomes como VID_20220215_074955.mp4, IMG-20230429-WA0002.jpg, FB_IMG_1701336607282.jpg
     if not info.get("data_exif"):
