@@ -12,6 +12,7 @@ import argparse
 import base64
 import json
 import os
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -64,10 +65,19 @@ def extract_video_frame(path):
     import hashlib
     tmp_dir = Path(tempfile.mkdtemp(prefix="fotosearch_vframe_"))
     try:
-        subprocess.run(
+        proc = subprocess.Popen(
             ["qlmanage", "-t", "-s", "400", "-o", str(tmp_dir), str(path)],
-            capture_output=True, timeout=20
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            start_new_session=True
         )
+        try:
+            proc.communicate(timeout=15)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except Exception:
+                proc.kill()
+            proc.communicate()
         generated = list(tmp_dir.iterdir())
         if generated:
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
@@ -160,7 +170,11 @@ def main():
     rows = conn.execute("""
         SELECT id, caminho, extensao, tipo FROM fotos
         WHERE descricao IS NULL
-        ORDER BY id
+        ORDER BY
+            CASE WHEN tipo = 'foto' THEN 0
+                 WHEN extensao IN ('.mov', '.MOV') THEN 1
+                 ELSE 2 END,
+            id
         LIMIT ?
     """, (args.limit,)).fetchall()
 
