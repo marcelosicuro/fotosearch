@@ -1,6 +1,6 @@
 #!/bin/bash
 PROJ="$HOME/Projetos/foto-search"
-PYTHON="/Library/Developer/CommandLineTools/usr/bin/python3"
+PYTHON="/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python"
 ENV_FILE="$PROJ/.env"
 
 if [ -f "$ENV_FILE" ]; then
