@@ -20,6 +20,23 @@ import tempfile
 import time
 from pathlib import Path
 
+
+class _GeminiTimeout(Exception):
+    pass
+
+
+def _timeout_handler(signum, frame):
+    raise _GeminiTimeout("Gemini API não respondeu em tempo")
+
+
+def gemini_call(client, model, contents, timeout=45):
+    signal.signal(signal.SIGALRM, _timeout_handler)
+    signal.alarm(timeout)
+    try:
+        return client.models.generate_content(model=model, contents=contents)
+    finally:
+        signal.alarm(0)
+
 try:
     from google import genai
     from google.genai import types as genai_types
@@ -216,9 +233,9 @@ def main():
                 pulados += 1
                 continue
 
-            response = client.models.generate_content(
-                model="gemini-3.5-flash-lite",
-                contents=[
+            response = gemini_call(
+                client, "gemini-3.5-flash-lite",
+                [
                     genai_types.Part.from_bytes(data=base64.b64decode(data), mime_type=mime),
                     PROMPT,
                 ]
