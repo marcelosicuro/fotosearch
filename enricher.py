@@ -18,24 +18,21 @@ import subprocess
 import sys
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from pathlib import Path
 
-
-class _GeminiTimeout(Exception):
-    pass
-
-
-def _timeout_handler(signum, frame):
-    raise _GeminiTimeout("Gemini API não respondeu em tempo")
-
+IS_MACOS = sys.platform == "darwin"
 
 def gemini_call(client, model, contents, timeout=45):
-    signal.signal(signal.SIGALRM, _timeout_handler)
-    signal.alarm(timeout)
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(
+        client.models.generate_content, model=model, contents=contents
+    )
+    pool.shutdown(wait=False)  # don't block if thread hangs
     try:
-        return client.models.generate_content(model=model, contents=contents)
-    finally:
-        signal.alarm(0)
+        return future.result(timeout=timeout)
+    except FuturesTimeout:
+        raise Exception("Gemini API não respondeu em tempo")
 
 try:
     from google import genai
@@ -78,50 +75,50 @@ def encode_image(path):
 
 
 def extract_video_frame(path):
-    """Extrai um frame do vídeo usando qlmanage (macOS) com fallback para ffmpeg."""
-    import hashlib
+    """Extrai um frame do vídeo. Usa qlmanage no macOS, ffmpeg no Linux."""
     tmp_dir = Path(tempfile.mkdtemp(prefix="fotosearch_vframe_"))
-    try:
-        proc = subprocess.Popen(
-            ["qlmanage", "-t", "-s", "400", "-o", str(tmp_dir), str(path)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            start_new_session=True
-        )
+
+    if IS_MACOS:
         try:
-            proc.communicate(timeout=15)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except Exception:
-                proc.kill()
-            proc.communicate()
-        generated = list(tmp_dir.iterdir())
-        if generated:
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-                jpg_path = tmp.name
-            subprocess.run(
-                ["sips", "-s", "format", "jpeg", str(generated[0]), "--out", jpg_path],
-                capture_output=True
+            proc = subprocess.Popen(
+                ["qlmanage", "-t", "-s", "400", "-o", str(tmp_dir), str(path)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=True
             )
-            if Path(jpg_path).exists() and Path(jpg_path).stat().st_size > 0:
-                with open(jpg_path, "rb") as f:
-                    data = base64.b64encode(f.read()).decode("utf-8")
-                os.unlink(jpg_path)
-                return "image/jpeg", data
-    except Exception:
-        pass
-    finally:
-        for f in tmp_dir.iterdir():
             try:
-                f.unlink()
-            except Exception:
-                pass
-        try:
-            tmp_dir.rmdir()
+                proc.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    proc.kill()
+                proc.communicate()
+            generated = list(tmp_dir.iterdir())
+            if generated:
+                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                    jpg_path = tmp.name
+                subprocess.run(
+                    ["sips", "-s", "format", "jpeg", str(generated[0]), "--out", jpg_path],
+                    capture_output=True
+                )
+                if Path(jpg_path).exists() and Path(jpg_path).stat().st_size > 0:
+                    with open(jpg_path, "rb") as f:
+                        data = base64.b64encode(f.read()).decode("utf-8")
+                    os.unlink(jpg_path)
+                    return "image/jpeg", data
         except Exception:
             pass
+        finally:
+            for f in tmp_dir.iterdir():
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+            try:
+                tmp_dir.rmdir()
+            except Exception:
+                pass
 
-    # Fallback: ffmpeg se disponível
     try:
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
             tmp_path = tmp.name
@@ -137,6 +134,17 @@ def extract_video_frame(path):
             return "image/jpeg", data
     except Exception:
         pass
+    finally:
+        if not IS_MACOS:
+            for f in tmp_dir.iterdir():
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+            try:
+                tmp_dir.rmdir()
+            except Exception:
+                pass
 
     return None, None
 

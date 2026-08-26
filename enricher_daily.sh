@@ -12,6 +12,6 @@ $PYTHON "$PROJ/indexer.py" >> /tmp/fotosearch_watcher.log 2>&1
 
 # 2. Enriquece com IA os arquivos ainda sem descrição
 if [ -n "$GEMINI_API_KEY" ] && ! pgrep -f "enricher.py" > /dev/null; then
-    $PYTHON "$PROJ/enricher.py" \
+    caffeinate -i $PYTHON "$PROJ/enricher.py" \
         --limit 1400 --key "$GEMINI_API_KEY" >> /tmp/fotosearch_watcher.log 2>&1
 fi

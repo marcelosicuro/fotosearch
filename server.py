@@ -6,14 +6,17 @@ Acesse: http://localhost:5050
 """
 import hashlib
 import json
+import mimetypes
 import os
 import sqlite3
 import subprocess
+import sys
 import urllib.parse
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
-import mimetypes
+
+IS_MACOS = sys.platform == "darwin"
 
 HEIC_CACHE_DIR = Path("/tmp/fotosearch_thumbs")
 HEIC_CACHE_DIR.mkdir(exist_ok=True)
@@ -28,31 +31,31 @@ def video_thumbnail(video_path):
     if cache_path.exists() and cache_path.stat().st_size > 0:
         return cache_path
 
-    tmp_dir = VIDEO_THUMB_DIR / f"tmp_{key}"
-    try:
-        tmp_dir.mkdir(exist_ok=True)
-        subprocess.run(
-            ["qlmanage", "-t", "-s", "400", "-o", str(tmp_dir), str(video_path)],
-            capture_output=True, timeout=20
-        )
-        generated = list(tmp_dir.iterdir())
-        if generated:
+    if IS_MACOS:
+        tmp_dir = VIDEO_THUMB_DIR / f"tmp_{key}"
+        try:
+            tmp_dir.mkdir(exist_ok=True)
             subprocess.run(
-                ["sips", "-s", "format", "jpeg", str(generated[0]), "--out", str(cache_path)],
-                capture_output=True
+                ["qlmanage", "-t", "-s", "400", "-o", str(tmp_dir), str(video_path)],
+                capture_output=True, timeout=20
             )
-    except Exception:
-        pass
-    finally:
-        if tmp_dir.exists():
-            for f in tmp_dir.iterdir():
-                f.unlink()
-            try:
-                tmp_dir.rmdir()
-            except Exception:
-                pass
+            generated = list(tmp_dir.iterdir())
+            if generated:
+                subprocess.run(
+                    ["sips", "-s", "format", "jpeg", str(generated[0]), "--out", str(cache_path)],
+                    capture_output=True
+                )
+        except Exception:
+            pass
+        finally:
+            if tmp_dir.exists():
+                for f in tmp_dir.iterdir():
+                    f.unlink()
+                try:
+                    tmp_dir.rmdir()
+                except Exception:
+                    pass
 
-    # Fallback: ffmpeg se disponível
     if not (cache_path.exists() and cache_path.stat().st_size > 0):
         for seek in ["3", "1", "0"]:
             try:
@@ -70,14 +73,32 @@ def video_thumbnail(video_path):
 
 
 def heic_to_jpeg(heic_path):
-    """Converte HEIC para JPEG usando sips (macOS). Retorna caminho do JPEG em cache."""
+    """Converte HEIC para JPEG. Usa sips no macOS, pillow-heif no Linux."""
     key = hashlib.md5(str(heic_path).encode()).hexdigest()
     cache_path = HEIC_CACHE_DIR / f"{key}.jpg"
-    if not cache_path.exists():
+    if cache_path.exists():
+        return cache_path
+
+    if IS_MACOS:
         subprocess.run(
             ["sips", "-s", "format", "jpeg", "-Z", "1200", str(heic_path), "--out", str(cache_path)],
             capture_output=True
         )
+    else:
+        try:
+            from pillow_heif import register_heif_opener
+            from PIL import Image
+            register_heif_opener()
+            img = Image.open(heic_path)
+            img = img.convert("RGB")
+            w, h = img.size
+            if max(w, h) > 1200:
+                ratio = 1200 / max(w, h)
+                img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+            img.save(cache_path, "JPEG", quality=85)
+        except Exception:
+            pass
+
     return cache_path if cache_path.exists() else None
 
 DB_PATH = Path(__file__).parent / "fotos.db"
@@ -311,7 +332,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/reveal":
             caminho = qp("path")
             if caminho and os.path.exists(caminho):
-                subprocess.run(["open", "-R", caminho], capture_output=True)
+                if IS_MACOS:
+                    subprocess.run(["open", "-R", caminho], capture_output=True)
                 self.send_json({"ok": True})
             else:
                 self.send_json({"ok": False}, 404)

@@ -20,7 +20,7 @@ Busca local de fotos e vídeos por palavras-chave, com descrições geradas por 
 - Python 3 (`http.server`, `sqlite3`) — sem frameworks
 - SQLite com FTS5 para busca textual
 - HTML + JS vanilla + Bootstrap 5
-- Google Gemini (`gemini-2.5-flash-lite`) para descrições e tags
+- Google Gemini (`gemini-2.5-flash-lite`) para descrições e tags (FREE tier)
 
 ## Requisitos
 
