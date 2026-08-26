@@ -136,11 +136,12 @@ def extract_exif_exifread(path):
 
 
 def extract_video_date(filepath):
-    """Lê a data real de gravação do container QuickTime/MP4 (atom mvhd)."""
+    """Lê a data real de gravação do container QuickTime/MP4 (atom mvhd).
+    Lê apenas os primeiros 2 MB — mvhd está sempre no início em arquivos bem formados."""
     QT_EPOCH = datetime(1904, 1, 1)
     try:
         with open(filepath, 'rb') as f:
-            data = f.read()
+            data = f.read(2 * 1024 * 1024)  # 2 MB máximo
         idx = data.find(b'mvhd')
         if idx == -1:
             return None
